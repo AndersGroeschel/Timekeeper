@@ -202,6 +202,38 @@ def endLastActivity(activities: list, time: datetime):
             if promptBoolInput("Just ended last activity with description: " + last["description"] + "\n\nWould you like to change it? (y/n)"):
                 last["description"] = input("Enter New Description:\n")
 
+
+def chooseActivityType(document) -> str:
+    suggestedTypes:list = document.get("suggested activity types")
+
+    if suggestedTypes == None or len(suggestedTypes) == 0:
+        newType = promptNonemptyString("what is the type of the new activity?: \n").capitalize()
+        document["suggested activity types"] = [newType]
+        return newType
+    
+    keys = [*"abcdefghijklmnopqrstuvwxyz"]
+
+    typeChoices = {}
+    for index, suggestedType in enumerate(suggestedTypes[:len(keys)]):
+        typeChoices[keys[index]] = suggestedType
+
+    choice = promptChoiceList("choose an option", [typeChoices, {"new":"Create a new type"}])
+
+    if choice in typeChoices.keys():
+        return typeChoices[choice]
+    
+    if choice == "new":
+        newType = promptNonemptyString("what is the type of the new activity?: \n").capitalize()
+        suggestedTypes.append(newType)
+        document["suggested activity types"] = suggestedTypes
+
+        return newType
+    
+    return ""
+
+
+
+
 def endActivity(document):
     activities = document.get("activities")
     if activities is None:
@@ -219,7 +251,7 @@ def startActivity(document):
     startTime = promptTime()
     endLastActivity(activities,startTime)
 
-    activityType = promptNonemptyString("what is the type of the new activity?: \n").capitalize() 
+    activityType = chooseActivityType(document) 
     activityDescription = input("description: ")
 
     activities.append({
