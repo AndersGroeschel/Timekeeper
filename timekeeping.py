@@ -181,26 +181,25 @@ def exit(document):
     print("Ok Bye!")
     sys.exit()
 
-def hasUnfinishedActivity(document):
+def hasUnfinishedActivity(document) -> bool:
     activities = document.get("activities")
-    if activities is None:
+    if activities is None or len(activities) == 0:
         return False
     
-    if len(activities) > 0:
-        last = activities[-1]
-        return last.get("end") == None
-    
+    for activity in activities:
+        if activity.get("end") == None:
+            return True
     return False
 
 
-def endLastActivity(activities: list, time: datetime):
-    if len(activities) > 0:
-        last = activities[-1]
-        if last.get("end") == None:
-            last["end"] = time
-
-            if promptBoolInput("Just ended last activity with description: " + last["description"] + "\n\nWould you like to change it? (y/n)"):
-                last["description"] = input("Enter New Description:\n")
+def endUnfinishedActivity(activity: Optional[dict], time: datetime):
+    if activity is None:
+        return 
+    
+    activity["end"] = time
+    if promptBoolInput("Just ended last activity with description: " + activity["description"] + "\n\nWould you like to change it? (y/n)"):
+        activity["description"] = input("Enter New Description:\n")
+            
 
 
 def chooseActivityType(document) -> str:
@@ -231,17 +230,29 @@ def chooseActivityType(document) -> str:
     
     return ""
 
+def getCurrentUnfinishedActivity(document, maxPriority:int = 0) -> Optional[dict]:
+    activities = document.get("activities")
+    if activities is None:
+        return None
+    
+    if len(activities) > 0:
+        i = 0
+        while(i < len(activities)):
+            curr = activities[-(i+1)]
+            if curr.get("end") == None and curr["priority"] <= maxPriority:
+                return curr
+            
+            i += 1
 
+        return None
 
 
 def endActivity(document):
-    activities = document.get("activities")
-    if activities is None:
-        activities = []
-
     endTime = promptTime()
 
-    endLastActivity(activities, endTime)
+    lastActivity= getCurrentUnfinishedActivity(document)
+
+    endUnfinishedActivity(lastActivity, endTime)
 
 def startActivity(document):
     activities = document.get("activities")
@@ -249,7 +260,9 @@ def startActivity(document):
         activities = []
 
     startTime = promptTime()
-    endLastActivity(activities,startTime)
+
+    lastActivity = getCurrentUnfinishedActivity(document)
+    endUnfinishedActivity(lastActivity,startTime)
 
     activityType = chooseActivityType(document) 
     activityDescription = input("description: ")
@@ -257,11 +270,28 @@ def startActivity(document):
     activities.append({
         "start": startTime,
         "type": activityType,
-        "priority": 0, # manually entered take it as ground truth
+        "priority": 0 if lastActivity == None else lastActivity["priority"], # manually entered take it as ground truth
         "description": activityDescription
     })
     
     document["activities"] = activities
+
+
+def interruptActivity(document):
+    lastActivity = getCurrentUnfinishedActivity(document)
+    if lastActivity == None:
+        return
+
+    startTime = promptTime()
+    activityType = chooseActivityType(document) 
+    activityDescription = input("description: ")
+
+    document["activities"].append({
+        "start": startTime,
+        "type": activityType,
+        "priority": lastActivity["priority"] - 1, # decrease priority number so it is considered more important
+        "description": activityDescription
+    })
 
 
 def isLoggedOff(document):
@@ -380,6 +410,8 @@ class WorkPeriod:
 
         self.timeSlices = timeSlices
 
+        self.timeSlices.sort(key= lambda slice: slice[0])
+
 
 
 
@@ -449,6 +481,7 @@ generateReportChoice = ChoiceObject("Generate Report",generateReport, "gen")
 
 startActivityChoice = ChoiceObject("start activity", startActivity)
 endActivityChoice = ChoiceObject("end last activity", endActivity)
+interruptActivityChoice = ChoiceObject("interrupt activity", interruptActivity)
 
 # define choice flow
 def getNextChoices(document):
@@ -478,6 +511,9 @@ def getNextChoices(document):
     if not loggedOn:
         choices.append(generateReportChoice)
 
+    if loggedOn and unfinishedActivity:
+        choices.append(interruptActivityChoice)
+
     return choices
 
 
@@ -504,7 +540,15 @@ choices = getNextChoices(scheduleDocument)
 
 while len(choices) > 0:
 
-    promptChoiceDynamic("What would you like to do?", choices, scheduleDocument)
+    unfinishedActivity = getCurrentUnfinishedActivity(scheduleDocument)
+    print()
+    print("="*50)
+    if unfinishedActivity != None:
+        print("Working on activity with")
+        print("       type: " + unfinishedActivity["type"])
+        print("description: " + unfinishedActivity["description"])
 
+
+    promptChoiceDynamic("What would you like to do?", choices, scheduleDocument)
     choices = getNextChoices(scheduleDocument)
 
