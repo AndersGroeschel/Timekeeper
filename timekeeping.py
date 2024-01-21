@@ -33,18 +33,30 @@ def copyJsonWithParsedTypes(document):
     return document
 
 
-def applyKeys(keys:list, document):
+def getValue(document: Any, keys:list, default = None):
     value = document
     for key in keys:
-        value = value[key]
+        value = value.get(key)
+        if value is None: 
+            return default
     return value
 
-def setValue(keys: list, document, newVal):
-    value = document
-    for key in keys[:-1]: # traverse document until last key
-        value = value[key]
+def setValue(document, keys: list[Union[str,int]],  newVal):
+    if len(keys) == 1:
+        document[keys[0]] = newVal
+        return document
     
-    value[keys[-1]] = newVal # set new value at last entry
+    value = document.get(keys[0])
+    if value == None:
+        if type(keys[1]) is str:
+            value = {}
+        elif type(keys[1]) is int:
+            value = []
+
+    document[keys[0]] = setValue(value, keys[1:], newVal)
+
+    return document
+
 
 def editJsonDoc(document):
 
@@ -59,7 +71,7 @@ def editJsonDoc(document):
 
     while True:
         print("")
-        curr = applyKeys(keyList, document)
+        curr = getValue(document, keyList)
 
         if len(keyList) > 0:
             actionChoices = baseChoices.copy()
@@ -102,7 +114,7 @@ def editJsonDoc(document):
             elif type(curr) is bool:
                 newVal = promptBoolInput()
 
-            setValue(keyList,document,newVal)
+            setValue(document,keyList,newVal)
 
         elif type(curr) is dict:
             keyList.append(navChoices[choice])
@@ -110,8 +122,6 @@ def editJsonDoc(document):
             keyList.append(int(choice))
         else:
             print(curr)
-
-
 
 def getTableString(rows: list, columnLabels: list[str], formatter: Callable[[Any],list[str]]) -> str:
 
@@ -148,7 +158,6 @@ def getTableString(rows: list, columnLabels: list[str], formatter: Callable[[Any
 
     return "\n".join(rowStrings)
 
-    
         
 
 
@@ -162,8 +171,12 @@ today = datetime.today()
 scriptPath = os.path.dirname(__file__)
 
 fileDir = os.path.join(scriptPath, f"timekeeping/{today.year}/{today.month}")
+persistentFileDir = os.path.join(scriptPath,"timekeeping/persistent_files")
 if not os.path.exists(fileDir):
     os.makedirs(fileDir)
+
+if not os.path.exists(persistentFileDir):
+    os.makedirs(persistentFileDir)
 
 filePath = os.path.join(fileDir, f"{today.day}.json")
 
@@ -173,8 +186,35 @@ def getHourStrFromSec(seconds:int) -> str:
 
 def save(document):
 
+    persistentFiles = document.get("persistent files")
+
+    if persistentFiles != None:
+        for fileName, content in persistentFiles.items():
+             with open(os.path.join(persistentFileDir,fileName + ".json"),"w", encoding='utf-8') as persistentFile:
+                json.dump(content, persistentFile, ensure_ascii=False, indent=4)
+
     with open(filePath,"w", encoding='utf-8') as scheduleFile:
         json.dump(document, scheduleFile, ensure_ascii=False, indent=4)
+
+
+def loadDocument():
+    scheduleDocument = {}
+    try: 
+        with open(filePath,"r", encoding='utf-8') as scheduleFile:
+            scheduleDocument = json.loads(scheduleFile.read())
+    except OSError:
+        pass
+
+    for fileName in os.listdir(persistentFileDir):
+        persistentFilePath = os.path.join(persistentFileDir, fileName)
+
+        try: 
+            with open(persistentFilePath, "r", encoding='utf-8') as persistentFile:
+                scheduleDocument["persistent files"][fileName.removesuffix(".json")] = json.loads(persistentFile.read())
+        except OSError:
+            pass
+
+
 
 def exit(document):
     save(document)
@@ -200,14 +240,49 @@ def endUnfinishedActivity(activity: Optional[dict], time: datetime):
     if promptBoolInput("Just ended last activity with description: " + activity["description"] + "\n\nWould you like to change it? (y/n)"):
         activity["description"] = input("Enter New Description:\n")
             
+def getSuggestedTypes(document):
+    settings = document.get("persistent files")
+    if settings == None:
+        return []
+    settings = settings.get("settings")
+    if settings == None:
+        return []
+    suggestedTypes = settings.get("suggested activity types")
+    if suggestedTypes == None:
+        return []
+    return suggestedTypes
+
+def updateSuggestedTypes(document, suggestedTypes: list[str], chosenType: str):
+    try: 
+        suggestedTypes.remove(chosenType)
+    except:
+        pass
+    suggestedTypes.insert(0,chosenType)
+
+    suggestedTypes = suggestedTypes[:7]
+    setValue(document,["persistent files","settings","suggested activity types"],suggestedTypes)
+
+    persistentFiles = document.get("persistent files")
+    if persistentFiles == None:
+        document["persistent files"] = {"settings":{"suggested activity types":suggestedTypes}}
+        return
+    
+    settings = document.get("settings")
+    if settings == None:
+        persistentFiles["settings"] = {"suggested activity types":suggestedTypes}
+        return
+    
+    settings["suggested activity types"] = suggestedTypes
+
 
 
 def chooseActivityType(document) -> str:
-    suggestedTypes:list = document.get("suggested activity types")
+
+    suggestedTypes = getSuggestedTypes(document)
 
     if suggestedTypes == None or len(suggestedTypes) == 0:
-        newType = promptNonemptyString("what is the type of the new activity?: \n").capitalize()
-        document["suggested activity types"] = [newType]
+        newType = promptNonemptyString("what is the type of the activity?: \n").capitalize()
+        updateSuggestedTypes(document,suggestedTypes,newType)
         return newType
     
     keys = [*"abcdefghijklmnopqrstuvwxyz"]
@@ -219,13 +294,12 @@ def chooseActivityType(document) -> str:
     choice = promptChoiceList("choose an option", [typeChoices, {"new":"Create a new type"}])
 
     if choice in typeChoices.keys():
+        updateSuggestedTypes(document,suggestedTypes,typeChoices[choice])
         return typeChoices[choice]
     
     if choice == "new":
         newType = promptNonemptyString("what is the type of the new activity?: \n").capitalize()
-        suggestedTypes.append(newType)
-        document["suggested activity types"] = suggestedTypes
-
+        updateSuggestedTypes(document,suggestedTypes,newType)
         return newType
     
     return ""
@@ -470,85 +544,42 @@ def generateReport(document):
 
         
 
+scheduleDocument = None
+
 
 
 # set up choice objects
-exitChoice = ChoiceObject("exit", exit, "x")
-logOnChoice = ChoiceObject("Log On", logOn, "log")
-logOffChoice = ChoiceObject("Log Off", logOff, "log")
-editChoice = ChoiceObject("edit", editJsonDoc, "e")
-generateReportChoice = ChoiceObject("Generate Report",generateReport, "gen")
+exitChoice = ChoiceObject("exit", exit, lambda doc: True, "x")
+logOnChoice = ChoiceObject("Log On", logOn, isLoggedOff, "log")
+logOffChoice = ChoiceObject("Log Off", logOff, lambda doc: (not isLoggedOff(doc)), "log")
+editChoice = ChoiceObject("edit", editJsonDoc, lambda doc: True, "e")
+generateReportChoice = ChoiceObject("Generate Report",generateReport, isLoggedOff, "gen")
 
-startActivityChoice = ChoiceObject("start activity", startActivity)
-endActivityChoice = ChoiceObject("end last activity", endActivity)
-interruptActivityChoice = ChoiceObject("interrupt activity", interruptActivity)
-
-# define choice flow
-def getNextChoices(document):
-
-    choices = [
-        exitChoice,
-        editChoice
-    ]
-
-    loggedOn = not isLoggedOff(document)
-
-    unfinishedActivity = hasUnfinishedActivity(document)
-
-    if loggedOn:
-        choices.append(logOffChoice)
-    
-    if not loggedOn:
-        choices.append(logOnChoice)
+startActivityChoice = ChoiceObject("start activity", startActivity, lambda doc: (not isLoggedOff(doc)))
+endActivityChoice = ChoiceObject("end last activity", endActivity, lambda doc: (not isLoggedOff(doc) and hasUnfinishedActivity(doc)))
+interruptActivityChoice = ChoiceObject("interrupt activity", interruptActivity, lambda doc: (not isLoggedOff(doc) and hasUnfinishedActivity(doc)))
 
 
-    if loggedOn:
-        choices.append(startActivityChoice)
-
-    if loggedOn and unfinishedActivity:
-        choices.append(endActivityChoice)
-
-    if not loggedOn:
-        choices.append(generateReportChoice)
-
-    if loggedOn and unfinishedActivity:
-        choices.append(interruptActivityChoice)
-
-    return choices
-
-
-
-
-
-
-
-
-scheduleDocument = None
-try: 
-    with open(filePath,"r", encoding='utf-8') as scheduleFile:
-        scheduleDocument = json.loads(scheduleFile.read())
-except OSError:
-    scheduleDocument = {}
 
 if isLoggedOff(scheduleDocument):
     if promptBoolInput("You aren't logged in. Would you like to log in? (y/n)"):
         logOnChoice.action(scheduleDocument)
 
-choices = getNextChoices(scheduleDocument)
 
+def header(document):
+    unfinishedActivity = getCurrentUnfinishedActivity(document)
 
-
-while len(choices) > 0:
-
-    unfinishedActivity = getCurrentUnfinishedActivity(scheduleDocument)
-    print()
-    print("="*50)
+    string = "\n"
+    string += "="*50 + "\n"
     if unfinishedActivity != None:
-        print("Working on activity with")
-        print("       type: " + unfinishedActivity["type"])
-        print("description: " + unfinishedActivity["description"])
+        string +="Working on activity with\n"
+        "       type: " + unfinishedActivity["type"] + "\n"
+        "description: " + unfinishedActivity["description"] + "\n"
+    return string
 
-
-    promptChoiceDynamic("What would you like to do?", choices, scheduleDocument)
-    choices = getNextChoices(scheduleDocument)
+doChoiceInteraction(
+    scheduleDocument,
+    [exitChoice, logOnChoice, logOffChoice, editChoice, generateReportChoice, startActivityChoice, endActivityChoice, interruptActivityChoice],
+    header
+)
 

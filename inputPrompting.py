@@ -3,10 +3,24 @@ from typing import Dict, Callable, Any, Optional, Union
 
 class ChoiceObject:
 
-    def __init__(self, description: str, action: Callable[[Any],None], preferredKey: Optional[str] = None, ):
+    def __init__(self, description: str, action: Callable[[Any],None], choiceAvailable: Callable[[Any],bool], preferredKey: Optional[str] = None):
         self.description = description
         self.action = action 
         self.preferredKey = preferredKey
+        self.choiceAvailable = choiceAvailable
+
+def doChoiceInteraction(item: Any, choices: list[ChoiceObject], headerString: Optional[Callable[[Any],str]] = None):
+    availableChoices = choices
+
+    while len(availableChoices) > 0:
+
+        print(headerString(item))
+        availableChoices = [choice for choice in choices if choice.choiceAvailable(item)]
+
+        promptChoiceDynamic("What would you like to do?", availableChoices, item)
+
+
+
 
 
 
