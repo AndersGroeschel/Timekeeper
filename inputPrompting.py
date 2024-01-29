@@ -1,5 +1,7 @@
 from datetime import datetime
-from typing import Dict, Callable, Any, Optional, Union
+from typing import Dict, Callable, Any, Optional, Union, TypeVar
+
+T = TypeVar("T")
 
 class ChoiceObject:
 
@@ -83,15 +85,69 @@ def promptChoiceList(msg: str, choices: Union[dict[str,str],list[dict[str,str]]]
     return ans
 
 
+def promptTreeSearch(root: T, getNextFormattedNodes: Callable[[T],list[tuple[str,bool,T]]]) -> T:
+    nodePath:list[T] = [root]
+
+    selectedNode = None
+
+    while selectedNode == None:
+
+        optionList = getNextFormattedNodes(nodePath[-1])
+
+        unusedKeys = [*"abcdefghijklmnopqrstuvwxyz"]
+        choiceList: list[str] = []
+        keys: list[str] = []
+        
+        if len(nodePath) > 1:
+            choiceList = [
+                "  .. (back)",
+                "  / (root)",
+                "  break"
+            ]
+            keys = ["..","/","break"]
+
+        msg = "choose an option\n"
+         
+        
+
+        keyToOptionTuple:dict[str,tuple[str,bool,T]] = {}
+
+        for description, isLeaf, node in optionList:
+            key = unusedKeys.pop(0)
+            keyToOptionTuple[key] = (description,isLeaf,node)
+            keys.append(key)
+            identifier = "-" if isLeaf else ">"
+            choiceList.append("  "+ identifier+" "+key+": "+description)
 
 
+        msg += "\n".join(choiceList)
+        msg += "\n"
+
+        ans = input(msg).lower().strip()
+        while not (ans in keys):
+            print("Please Choose: " + formatStrList(keys, "or") + "\n")
+            ans = input(msg).lower().strip()
+
+        if ans == "..":
+            nodePath.pop(-1)
+        elif ans == "/":
+            nodePath = [root]
+        elif ans == "break":
+            break
+        else:
+            (description, isLeaf, node) = keyToOptionTuple[ans]
+            if isLeaf:
+                selectedNode = node
+            else:
+                nodePath.append(node)
+            
+    return selectedNode
 
 
 
 def promptChoiceDynamic(msg: str, choices: list[ChoiceObject], document) -> None:
 
     choiceOptions = [*"abcdefghijklmnopqrstuvwxyz"]
-    choiceOptions.reverse()
 
     allKeys = []
 
@@ -107,7 +163,7 @@ def promptChoiceDynamic(msg: str, choices: list[ChoiceObject], document) -> None
         isAutoCreated = False
 
         while (key is None) or (key.strip().lower() in allKeys):
-            key = choiceOptions.pop()
+            key = choiceOptions.pop(0)
             isAutoCreated = True
 
         if isAutoCreated:
