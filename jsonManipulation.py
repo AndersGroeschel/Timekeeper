@@ -37,9 +37,14 @@ def copyJsonWithParsedTypes(document: Json) -> JsonExtended:
 def getValue(document: Json, keys: list[Union[str,int]], default: Json = None):
     value = document
     for key in keys:
-        value = value.get(key)
-        if value is None: 
-            return default
+        if type(key) is str:
+            value = value.get(key)
+            if value is None: 
+                return default
+        elif type(key) is int:
+            if key >= len(value):
+                return default
+            value = value[key]
     return value
 
 def setValue(document:Json, keys: list[Union[str,int]], newVal):
@@ -47,14 +52,22 @@ def setValue(document:Json, keys: list[Union[str,int]], newVal):
         document[keys[0]] = newVal
         return document
     
-    value = document.get(keys[0])
+    currKey = keys[0]
+    nextKey = keys[1]
+
+    value = None
+    if type(currKey) is str:
+        value = document.get(currKey)
+    elif type(currKey) is int and currKey < len(document):
+        value = document[currKey]
+
     if value == None:
-        if type(keys[1]) is str:
+        if type(nextKey) is str:
             value = {}
-        elif type(keys[1]) is int:
+        elif type(nextKey) is int:
             value = []
 
-    document[keys[0]] = setValue(value, keys[1:], newVal)
+    document[currKey] = setValue(value, keys[1:], newVal)
 
     return document
 

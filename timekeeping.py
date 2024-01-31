@@ -432,7 +432,7 @@ def generateReport(document):
     workTimesToUpdate = []
     for (index,workPeriod) in [(index,period) for (index,period) in enumerate(workPeriods) if not period.sent]:
         print("\n"+workPeriod.reportString() + "\n")
-        if promptBoolInput("send report to Exact Online?"):
+        if promptBoolInput("send report to Exact Online? (y/n)"):
             timeSlicesToSend += workPeriod.timeSlices
             workTimesToUpdate.append(index)
             
@@ -440,7 +440,7 @@ def generateReport(document):
     if len(timeSlicesToSend) > 0:
         if exactInterface.enterTimes(document, timeSlicesToSend):
             for i in workTimesToUpdate:
-                workTimes[i]["sent"] = True
+                setValue(document,["work times",i,"sent"], True)
         
 
 def hasFile(document: Json, fileName: str) -> bool:
@@ -483,9 +483,9 @@ def header(document):
         string += "description: " + unfinishedActivity["description"] + "\n"
     return string
 
-#doChoiceInteraction(
-#    document,
-#    [exitChoice, logOnChoice, logOffChoice, editChoice, generateReportChoice, startActivityChoice, endActivityChoice, interruptActivityChoice, addExactOnlineChoice],
-#    header
-#)
+doChoiceInteraction(
+    document,
+    [exitChoice, logOnChoice, logOffChoice, editChoice, generateReportChoice, startActivityChoice, endActivityChoice, interruptActivityChoice, addExactOnlineChoice],
+    header
+)
 

@@ -18,6 +18,8 @@ def addExactIntegration(document: Json):
     setExactUsername(document)
     setExactPassword(document)
     setExactUrl(document)
+    setAutoSendAfterGenerate(document)
+    setAutoSubmit(document)
 
 def setAutoSendAfterGenerate(document):
     setValue(document,["persistent files", "exactOnline", "send report after generated"], promptBoolInput( "send report after generated? (y/n) \n"))
@@ -63,6 +65,11 @@ def waitForElementVisibility(driver: WebDriver, by: str, value: str) -> Optional
 def setElementValue(driver:WebDriver,elemId:str, value: str):
     driver.execute_script(f"""
         document.getElementById('{elemId}').setAttribute('value', '{value}')
+    """)
+
+def scrollIntoView(driver:WebDriver, elemId:str):
+    driver.execute_script(f"""
+        document.getElementById('{elemId}').scrollIntoView()
     """)
 
 
@@ -151,25 +158,34 @@ class ExactOnlineInterface:
                 return
 
             if exactOnlineType.get(storageKey) == None:
-                exactOnlineType[storageKey] = "".join([string.capitalize() for string in (promptNonemptyString(prompt).split(" "))])
+                exactOnlineType[storageKey] = "".join([string.capitalize() for string in (input(prompt).split(" "))])
 
             value = exactOnlineType[storageKey]
-            input = waitForElementVisibility(driver,By.ID,elemId + "_alt")
-            input.clear()
-            input.send_keys(value)
-            projectPopup = waitForElementVisibility(driver,By.ID,f"cntPopupSearch")
-            popupItems = projectPopup.find_elements(By.CLASS_NAME,"ContextMenuItems")
-            if len(popupItems) == 1:
-                popupItems[0].click()
+
+            if value != "":
+                inputElem = waitForElementVisibility(driver,By.ID,elemId + "_alt")
+                inputElem.clear()
+                inputElem.send_keys(value)
+                projectPopup = waitForElementVisibility(driver,By.ID,f"cntPopupSearch")
+                popupItems = projectPopup.find_elements(By.CLASS_NAME,"ContextMenuItems")
+                if len(popupItems) == 1:
+                    popupItems[0].click()
+                elif len(popupItems) > 1:
+                    # TODO display list of items as choices (for now take first)
+                    popupItems[0].click()
 
             hiddenInput = driver.find_element(By.ID, elemId)
             exactOnlineType[storageKey + " internal id"] = hiddenInput.get_attribute("value")
+
+            inputElem = waitForElementVisibility(driver,By.ID,elemId + "_alt")
+            exactOnlineType[storageKey] = inputElem.get_attribute("value")
 
         def getNextFormattedNodes(currNode: WebElement) -> list[tuple[str,bool,WebElement]]:
 
             id = "r" + currNode.get_attribute("id").lstrip("_")
             currentChildren = driver.find_element(By.ID,id)
             if not currentChildren.is_displayed():
+                scrollIntoView(driver,currNode.get_attribute("id"))
                 currNode.find_element(By.TAG_NAME,"button").click()
             
             tableNode = waitForElementVisibility(driver,By.CSS_SELECTOR,f"#{id} table.TreeView")
@@ -219,16 +235,15 @@ class ExactOnlineInterface:
             # Tree is structured as such: 
             #   #_TreeList_Tree
             #       #_0 (hidden true root)
-            #       #r0 (hidden expandable content of root)
-            #           #_1 (root of selected project)
-            #           #r1 (expandable content)
+            #       #r0 (expandable content of root)
             #           ...
             #
             # To avoid clicking on an element that is not visible start search for #_1
 
-            activityTree = waitForElementVisibility(driver,By.ID,"_1")
+            activityTree = waitForElementVisibility(driver,By.ID,"_0")
 
             selectedTypeWebElement = promptTreeSearch(activityTree, getNextFormattedNodes)
+            scrollIntoView(driver,selectedTypeWebElement.get_attribute("id"))
 
             selectedTypeWebElement.find_element(By.TAG_NAME,"a").click()
 
